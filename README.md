@@ -77,6 +77,11 @@ For automated upgrades, follow these steps in Google Cloud Console:
      - Cloud Build Editor (`roles/cloudbuild.builds.editor`)
      - Cloud Scheduler Admin (`roles/cloudscheduler.admin`)
      - GKE Backup Admin (`roles/gkebackup.admin`)
+     - GKE Developer (`roles/container.developer`)
+     - Artifact Registry Writer (`roles/artifactregistry.writer`)
+     - Logs Writer (`roles/logging.logWriter`)
+     - Logs Viewer (`roles/logging.viewer`)
+     - Storage Object Creator (`roles/storage.objectCreator`)
    - Click "Done"
 
 3. **Cloud Build Trigger Setup**

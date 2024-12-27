@@ -29,6 +29,7 @@ steps:
           echo "Auto upgrade enabled, getting latest version..."
           TARGET_VERSION=$$(curl -s https://api.github.com/repos/n8n-io/n8n/releases/latest | \
             grep '"tag_name":' | sed -E 's/.*"n8n@([^"]+)".*/\1/')
+          echo "Latest version: $$TARGET_VERSION"
         else
           echo "No target version specified and auto upgrade not enabled, skipping upgrade"
           exit 0
@@ -37,11 +38,14 @@ steps:
         # Remove n8n@ prefix if exists
         TARGET_VERSION=$$(echo "$$TARGET_VERSION" | sed 's/n8n@//')
         
-        echo "Target version: $$TARGET_VERSION"
         echo "$$TARGET_VERSION" > /workspace/target_version
 
         if [ "$$CURRENT_VERSION" != "$$TARGET_VERSION" ]; then
-          echo "Upgrade needed from $$CURRENT_VERSION to $$TARGET_VERSION"
+          if [ "${_AUTO_UPGRADE}" = "true" ]; then
+            echo "Upgrade needed from $$CURRENT_VERSION to $$TARGET_VERSION"
+          else
+            echo "Starting upgrade from $$CURRENT_VERSION to $$TARGET_VERSION"
+          fi
           echo "true" > /workspace/upgrade_needed
         else
           echo "Already at version $$TARGET_VERSION"
