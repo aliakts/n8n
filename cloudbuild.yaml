@@ -96,14 +96,16 @@ steps:
 
           gcloud components install beta --quiet
 
+          BACKUP_LOCATION=$$(echo "${_CLUSTER_LOCATION}" | sed 's/-[a-z]$//')
+          
           echo "Checking if GKE backup plan exists..."
           if ! gcloud beta container backup-restore backup-plans describe n8n-backup-plan \
               --project=${PROJECT_ID} \
-              --location=${_CLUSTER_LOCATION} > /dev/null 2>&1; then
+              --location=$$BACKUP_LOCATION > /dev/null 2>&1; then
               echo "Backup plan does not exist, creating..."
               gcloud beta container backup-restore backup-plans create n8n-backup-plan \
                   --project=${PROJECT_ID} \
-                  --location=${_CLUSTER_LOCATION} \
+                  --location=$$BACKUP_LOCATION \
                   --cluster=projects/${PROJECT_ID}/locations/${_CLUSTER_LOCATION}/clusters/${_CLUSTER_NAME} \
                   --selected-namespaces=${_NAMESPACE} \
                   --backup-retain-days=7 --quiet
@@ -113,7 +115,7 @@ steps:
 
           gcloud beta container backup-restore backups create n8n-backup-$(date +%Y%m%d-%H%M%S) \
               --project=${PROJECT_ID} \
-              --location=${_CLUSTER_LOCATION} \
+              --location=$$BACKUP_LOCATION \
               --backup-plan=n8n-backup-plan --quiet
           
           echo "All backups completed successfully."
