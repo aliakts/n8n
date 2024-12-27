@@ -32,13 +32,14 @@ The deployment includes:
 For N8N deployments in Google Kubernetes Engine environments, you have two options:
 
 #### Option A: Manual Upgrade (Local)
-Run the upgrade directly from your terminal:
-
+First, clone this repository:
 ```bash
-# Navigate to the repository root
-cd /path/to/n8n
+git clone https://github.com/[YOUR_ORGANIZATION]/n8n.git
+cd n8n
+```
 
-# Upgrade to specific version
+Then run the upgrade from your terminal:
+```bash
 gcloud builds submit --config=cloudbuild.yaml \
   --substitutions=_TARGET_N8N_VERSION=1.69.1
 ```
@@ -57,83 +58,92 @@ Configuration variables:
 | `_AUTO_UPGRADE` | Set to `true` for automatic upgrades; leave empty for manual upgrades | `true` |
 
 #### Option B: Automated Upgrades
-For automated upgrades, you'll need to:
-1. Fork this repository to your GitHub organization
-2. Connect GitHub to Cloud Build
-3. Set up Cloud Build trigger and Cloud Scheduler
+For automated upgrades, follow these steps in Google Cloud Console:
 
-##### Repository Setup
-1. Fork this repository to your GitHub organization
-2. Connect GitHub to Cloud Build:
+1. **Repository Setup**
+   - Fork this repository to your GitHub organization
    - Go to [Cloud Build Triggers](https://console.cloud.google.com/cloud-build/triggers)
    - Click "Connect Repository"
    - Select your forked repository
-   - Done
+   - Follow the authentication steps
 
-##### Cloud Build Setup
-1. Create a Cloud Build trigger:
+2. **Service Account Setup**
+   - Go to [IAM & Admin > Service Accounts](https://console.cloud.google.com/iam-admin/serviceaccounts)
+   - Click "Create Service Account"
+   - Name: `n8n-automation`
+   - Description: "Service account for N8N automated upgrades"
+   - Click "Create and Continue"
+   - Add the following roles:
+     - Cloud Build Editor (`roles/cloudbuild.builds.editor`)
+     - Cloud Scheduler Admin (`roles/cloudscheduler.admin`)
+     - GKE Backup Admin (`roles/gkebackup.admin`)
+   - Click "Done"
+
+3. **Cloud Build Trigger Setup**
+   - Go to [Cloud Build Triggers](https://console.cloud.google.com/cloud-build/triggers)
+   - Click "Create Trigger"
+   - Name: `n8n-auto-upgrade`
+   - Event: "Manual invocation"
+   - Source:
+     - Repository: Select your connected repository
+     - Branch: `^master$`
+   - Configuration:
+     - Type: "Cloud Build configuration file (yaml or json)"
+     - Location: "Repository"
+     - Cloud Build configuration file location: `/cloudbuild.yaml`
+   - Variables (click "Add variable" for each):
+     - Required variables:
+       - `_CLUSTER_LOCATION`: Your GKE cluster location (e.g., `europe-west1-b`)
+       - `_CLUSTER_NAME`: Your GKE cluster name
+       - `_DEPLOYMENT_NAME`: Your N8N deployment name
+       - `_NAMESPACE`: Kubernetes namespace where N8N is deployed
+       - `_PG_SECRET_NAME`: PostgreSQL secret name
+       - `_BACKUP_BUCKET`: GCS bucket for backups
+       - `_REPO_LOCATION`: Artifact Registry location (e.g., `europe-west1`)
+     - Auto upgrade setting:
+       - `_AUTO_UPGRADE`: Set to `true`
+   - Service account: Select `n8n-automation@[PROJECT_ID].iam.gserviceaccount.com`
+   - Click "Create"
+
+4. **Cloud Scheduler Setup**
+   - Go to [Cloud Scheduler](https://console.cloud.google.com/cloudscheduler)
+   - Click "Create Job"
+   - Name: `n8n-version-check`
+   - Region: Select your region (e.g., `europe-west1`)
+   - Frequency: `0 0 1 * *` (runs monthly, see note below)
+   - Timezone: Select your timezone
+   - Target:
+     - Target type: "HTTP"
+     - URL: `https://cloudbuild.googleapis.com/v1/projects/[PROJECT_ID]/triggers/[TRIGGER_ID]:run`
+       (Get TRIGGER_ID from the trigger's details page)
+     - HTTP method: "POST"
+     - Body: `{"branchName":"main"}`
+     - Auth header: "Add OAuth token"
+     - Service account: Select `n8n-automation@[PROJECT_ID].iam.gserviceaccount.com`
+   - Click "Create"
+
+> Note: You can adjust the schedule using cron expressions:
+> - Monthly: `0 0 1 * *` (First day of each month at 00:00)
+> - Daily: `0 0 * * *` (Every day at 00:00)
+
+### Version Upgrade Behavior
+
+The upgrade process follows these priorities:
+1. If `_TARGET_N8N_VERSION` is specified, that exact version will be used regardless of `_AUTO_UPGRADE` setting
+2. If no target version is specified but `_AUTO_UPGRADE=true`, the latest stable version will be used
+3. If neither is specified, no upgrade will be performed
+
+Example:
 ```bash
-gcloud builds triggers create manual \
-  --name="n8n-auto-upgrade" \
-  --repo="https://github.com/[YOUR_ORGANIZATION]/n8n]" \
-  --repo-type="GITHUB" \
-  --branch="master" \
-  --build-config="cloudbuild.yaml" \
-  --substitutions="_AUTO_UPGRADE=true" \
-  --description="Automated N8N upgrade trigger"
+# Upgrade to specific version (highest priority)
+gcloud builds submit --config=cloudbuild.yaml --substitutions=_TARGET_N8N_VERSION=1.69.1
+
+# Auto upgrade to latest stable version (if no target version specified)
+gcloud builds submit --config=cloudbuild.yaml --substitutions=_AUTO_UPGRADE=true
+
+# No upgrade will be performed
+gcloud builds submit --config=cloudbuild.yaml
 ```
-
-2. Set up Cloud Scheduler job:
-```bash
-# Get your project ID, Number and trigger ID
-PROJECT_ID=$(gcloud config get-value project)
-TRIGGER_ID=$(gcloud builds triggers describe n8n-auto-upgrade --format='value(id)')
-PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format='value(projectNumber)')
-
-# Create service account for Cloud Scheduler
-gcloud iam service-accounts create n8n-upgrade-scheduler \
-  --display-name="N8N Upgrade Scheduler"
-
-# Get the service account email
-SERVICE_ACCOUNT="n8n-upgrade-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
-
-# Grant necessary permissions
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${SERVICE_ACCOUNT}" \
-  --role="roles/cloudbuild.builds.editor"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${SERVICE_ACCOUNT}" \
-  --role="roles/cloudbuild.builds.approver"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-    --member=serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com \
-    --role=roles/gkebackup.admin
-
-# Create the scheduler job
-gcloud scheduler jobs create http n8n-version-check \
-  --schedule="0 0 1 * *" \
-  --uri="https://cloudbuild.googleapis.com/v1/projects/${PROJECT_ID}/triggers/${TRIGGER_ID}:run" \
-  --oauth-token-scope="https://www.googleapis.com/auth/cloud-platform" \
-  --message-body="{\"branchName\":\"master\"}" \
-  --oauth-service-account-email="${SERVICE_ACCOUNT}" \
-  --time-zone="Europe/Istanbul"
-```
-
-Note: If you get permission errors, make sure to:
-1. Wait a few minutes after creating the service account for permissions to propagate
-2. Enable the Cloud Build API and Cloud Scheduler API in your project
-3. Verify that the trigger ID is correct
-
-The automated setup will:
-- Check for new N8N versions weekly
-- Automatically trigger the upgrade process if a new version is available
-- Maintain all safety measures and backup procedures
-
-You can customize the schedule using standard cron syntax:
-- Weekly: `0 0 * * 1` (Every Monday at 00:00)
-- Monthly: `0 0 1 * *` (First day of each month at 00:00)
-- Daily: `0 0 * * *` (Every day at 00:00)
 
 ### 2. On-Premise Upgrade
 

@@ -22,12 +22,16 @@ steps:
         echo "Current version: $$CURRENT_VERSION"
         echo "$$CURRENT_VERSION" > /workspace/current_version
 
-        if [ "${_AUTO_UPGRADE}" = "true" ] ||[ -z "${_TARGET_N8N_VERSION}" ]; then
-          echo "No target version specified or auto upgrade enabled, getting latest..."
-          TARGET_VERSION=$$(curl -s https://api.github.com/repos/n8n-io/n8n/releases | \
-            grep -m 1 '"tag_name":' | sed -E 's/.*"v?([^"]+)".*/\1/')
-        else
+        if [ -n "${_TARGET_N8N_VERSION}" ]; then
+          echo "Target version specified: ${_TARGET_N8N_VERSION}"
           TARGET_VERSION="${_TARGET_N8N_VERSION}"
+        elif [ "${_AUTO_UPGRADE}" = "true" ]; then
+          echo "Auto upgrade enabled, getting latest version..."
+          TARGET_VERSION=$$(curl -s https://api.github.com/repos/n8n-io/n8n/releases/latest | \
+            grep '"tag_name":' | sed -E 's/.*"n8n@([^"]+)".*/\1/')
+        else
+          echo "No target version specified and auto upgrade not enabled, skipping upgrade"
+          exit 0
         fi
         
         # Remove n8n@ prefix if exists
@@ -173,3 +177,4 @@ substitutions:
 
 options:
   dynamicSubstitutions: true
+  logging: CLOUD_LOGGING_ONLY
