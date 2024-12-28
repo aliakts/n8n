@@ -74,13 +74,15 @@ For automated upgrades, follow these steps in Google Cloud Console:
    - Description: "Service account for N8N automated upgrades"
    - Click "Create and Continue"
    - Add the following roles:
+     - Artifact Registry Writer (`roles/artifactregistry.writer`)
+     - GKE Backup Admin (`roles/gkebackup.admin`)
+     - Cloud Build Approver (`roles/cloudbuild.builds.approver`)
      - Cloud Build Editor (`roles/cloudbuild.builds.editor`)
      - Cloud Scheduler Admin (`roles/cloudscheduler.admin`)
-     - GKE Backup Admin (`roles/gkebackup.admin`)
      - GKE Developer (`roles/container.developer`)
-     - Artifact Registry Writer (`roles/artifactregistry.writer`)
-     - Logs Writer (`roles/logging.logWriter`)
      - Logs Viewer (`roles/logging.viewer`)
+     - Logs Writer (`roles/logging.logWriter`)
+     - Service Account User (`roles/iam.serviceAccountUser`)
      - Storage Object Creator (`roles/storage.objectCreator`)
    - Click "Done"
 
@@ -113,22 +115,25 @@ For automated upgrades, follow these steps in Google Cloud Console:
 4. **Cloud Scheduler Setup**
    - Go to [Cloud Scheduler](https://console.cloud.google.com/cloudscheduler)
    - Click "Create Job"
-   - Name: `n8n-version-check`
+   - Name: `n8n-auto-upgrade`
    - Region: Select your region (e.g., `europe-west1`)
    - Frequency: `0 0 1 * *` (runs monthly, see note below)
    - Timezone: Select your timezone
    - Target:
      - Target type: "HTTP"
-     - URL: `https://cloudbuild.googleapis.com/v1/projects/[PROJECT_ID]/triggers/[TRIGGER_ID]:run`
-       (Get TRIGGER_ID from the trigger's details page)
+     - URL: `https://cloudbuild.googleapis.com/v1/projects/[PROJECT_ID]/locations/[REGION]/triggers/[TRIGGER_ID]:run`
+       (Get TRIGGER_ID using one of these methods:
+       - Console: Go to [Cloud Build Triggers](https://console.cloud.google.com/cloud-build/triggers), click on the trigger, and copy the ID from the URL (e.g., in `https://console.cloud.google.com/cloud-build/triggers;region=europe-west1/edit/87eb3c11-d0b7-47ac-beb7-38bba2bdcf42?invt=AblXWw&project=example-project`, the ID is `87eb3c11-d0b7-47ac-beb7-38bba2bdcf42`)
+       - Command line: Run `gcloud builds triggers list --region=[REGION] --format='value(name,id)'`)
      - HTTP method: "POST"
-     - Body: `{"branchName":"main"}`
+     - Body: `{"source":{"branchName":"master"}}`
      - Auth header: "Add OAuth token"
      - Service account: Select `n8n-automation@[PROJECT_ID].iam.gserviceaccount.com`
    - Click "Create"
 
 > Note: You can adjust the schedule using cron expressions:
 > - Monthly: `0 0 1 * *` (First day of each month at 00:00)
+> - Weekly: `0 0 * * 0` (Every Sunday at 00:00)
 > - Daily: `0 0 * * *` (Every day at 00:00)
 
 ### Version Upgrade Behavior
